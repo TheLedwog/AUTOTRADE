@@ -131,8 +131,10 @@ def test_orders_command_returns_recent_history():
 
         assert handled is True
         payload = confirmer.session.post.call_args.kwargs["json"]
-        assert "Recent Orders" in payload["text"]
+        assert "Order History" in payload["text"]
         assert "12345" in payload["text"]
         assert "AAPL" in payload["text"]
+        assert "Status: Successful | Broker: RECEIVED" in payload["text"]
+        assert "Est. Cost: $1,000.00" in payload["text"]
     finally:
         history_path.unlink(missing_ok=True)

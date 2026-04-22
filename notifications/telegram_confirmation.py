@@ -6,6 +6,7 @@ import secrets
 import threading
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -356,18 +357,14 @@ class TelegramTradeConfirmer:
         if not entries:
             return "No order history has been recorded yet."
 
-        lines = [f"Recent Orders (last {len(entries)})", ""]
+        lines = [f"Order History ({len(entries)} recent)", ""]
         for index, entry in enumerate(entries, start=1):
-            status = str(entry.get("result", "UNKNOWN"))
-            broker_status = str(entry.get("broker_status") or "").strip()
-            status_label = f"{status} ({broker_status})" if broker_status else status
+            lines.append(f"{index}. {self._format_history_symbol(entry)}")
+            lines.append(f"   Time: {self._format_history_timestamp(entry.get('timestamp'))}")
+            lines.append(f"   Status: {self._format_history_status(entry)}")
+            lines.append(f"   Action: {self._format_history_action(entry)}")
             lines.append(
-                f"{index}. {entry.get('timestamp', '')} | {status_label}"
-            )
-            lines.append(
-                f"   {entry.get('trade_type', '')} {entry.get('side', '')} "
-                f"{entry.get('order_symbol', '')} x{entry.get('quantity', '')} | "
-                f"Est ${float(entry.get('estimated_cost', 0.0)):.2f}"
+                f"   Est. Cost: ${float(entry.get('estimated_cost', 0.0)):,.2f}"
             )
             order_id = str(entry.get("order_id") or "").strip()
             if order_id:
@@ -377,6 +374,53 @@ class TelegramTradeConfirmer:
                 lines.append(f"   Note: {failure_reason}")
             lines.append("")
         return "\n".join(lines).rstrip()
+
+    @staticmethod
+    def _format_history_symbol(entry: dict[str, Any]) -> str:
+        """Return a readable symbol label for an order-history entry."""
+        order_symbol = str(entry.get("order_symbol") or "").strip()
+        underlying_symbol = str(entry.get("underlying_symbol") or "").strip()
+        if order_symbol and underlying_symbol and order_symbol != underlying_symbol:
+            return f"{underlying_symbol} ({order_symbol})"
+        return order_symbol or underlying_symbol or "Unknown symbol"
+
+    @staticmethod
+    def _format_history_timestamp(value: Any) -> str:
+        """Return a human-readable UTC timestamp for Telegram history output."""
+        raw_value = str(value or "").strip()
+        if not raw_value:
+            return "Unknown"
+
+        try:
+            parsed = datetime.fromisoformat(raw_value.replace("Z", "+00:00"))
+        except ValueError:
+            return raw_value
+
+        utc_value = parsed.astimezone(timezone.utc)
+        return utc_value.strftime("%d %b %Y %H:%M UTC")
+
+    @staticmethod
+    def _format_history_status(entry: dict[str, Any]) -> str:
+        """Return a friendlier status label for Telegram history."""
+        status_map = {
+            "SUCCESS": "Successful",
+            "FAILED": "Failed",
+            "CANCELLED": "Cancelled",
+        }
+        result = status_map.get(str(entry.get("result", "")).upper(), "Unknown")
+        broker_status = str(entry.get("broker_status") or "").strip()
+        if broker_status:
+            return f"{result} | Broker: {broker_status}"
+        return result
+
+    @staticmethod
+    def _format_history_action(entry: dict[str, Any]) -> str:
+        """Return a concise action summary for Telegram history."""
+        trade_type = str(entry.get("trade_type") or "").strip().title() or "Trade"
+        side = str(entry.get("side") or "").strip().title() or "Unknown"
+        order_symbol = str(entry.get("order_symbol") or "").strip() or "Unknown symbol"
+        quantity = int(entry.get("quantity") or 0)
+        return f"{trade_type} {side} {order_symbol} x{quantity:,}"
 
     def _record_history(
         self,
