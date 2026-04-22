@@ -1,0 +1,17 @@
+[Unit]
+Description=TastyTrade AutoTrader Backend
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=autotrader
+Group=autotrader
+WorkingDirectory=/opt/tastytrade_autotrader
+EnvironmentFile=/opt/tastytrade_autotrader/.env
+ExecStart=/opt/tastytrade_autotrader/venv/bin/python /opt/tastytrade_autotrader/main.py
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
