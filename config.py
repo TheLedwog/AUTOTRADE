@@ -57,6 +57,7 @@ class AppConfig:
     telegram_chat_id: str | None
     telegram_confirmation_timeout_seconds: int
     telegram_request_timeout_seconds: float
+    telegram_poll_timeout_seconds: int
     dry_run_fallback_stock_price: float
     dry_run_fallback_option_price: float
     request_timeout: float = 15.0
@@ -114,6 +115,13 @@ class AppConfig:
             raise ValueError(
                 "TELEGRAM_REQUEST_TIMEOUT_SECONDS must be greater than zero"
             )
+        telegram_poll_timeout_seconds = int(
+            os.getenv("TELEGRAM_POLL_TIMEOUT_SECONDS", "5")
+        )
+        if telegram_poll_timeout_seconds <= 0:
+            raise ValueError(
+                "TELEGRAM_POLL_TIMEOUT_SECONDS must be greater than zero"
+            )
 
         if telegram_confirmation_enabled:
             if not telegram_bot_token:
@@ -162,6 +170,7 @@ class AppConfig:
             telegram_chat_id=telegram_chat_id,
             telegram_confirmation_timeout_seconds=telegram_confirmation_timeout_seconds,
             telegram_request_timeout_seconds=telegram_request_timeout_seconds,
+            telegram_poll_timeout_seconds=telegram_poll_timeout_seconds,
             dry_run_fallback_stock_price=dry_run_fallback_stock_price,
             dry_run_fallback_option_price=dry_run_fallback_option_price,
         )

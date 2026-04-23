@@ -22,6 +22,7 @@ def build_confirmer(history_path: Path) -> TelegramTradeConfirmer:
         telegram_chat_id="123",
         telegram_confirmation_timeout_seconds=300,
         telegram_request_timeout_seconds=60,
+        telegram_poll_timeout_seconds=5,
     )
     return TelegramTradeConfirmer(
         config=config,
@@ -136,5 +137,52 @@ def test_orders_command_returns_recent_history():
         assert "AAPL" in payload["text"]
         assert "Status: Successful | Broker: RECEIVED" in payload["text"]
         assert "Est. Cost: $1,000.00" in payload["text"]
+    finally:
+        history_path.unlink(missing_ok=True)
+
+
+def test_orders_command_tolerates_legacy_string_values():
+    """The /orders command should still render if older rows stored numbers as strings."""
+    history_path = make_history_path()
+    try:
+        confirmer = build_confirmer(history_path)
+        confirmer.order_history_store.append(
+            {
+                "timestamp": "2026-04-22T16:00:00Z",
+                "trade_type": "STOCK",
+                "underlying_symbol": "AAPL",
+                "order_symbol": "AAPL",
+                "side": "BUY",
+                "quantity": "1000.0",
+                "estimated_cost": "100000.00",
+                "unit_price": "100.0",
+                "result": "SUCCESS",
+                "broker_status": "Routed",
+                "order_id": "940344",
+                "filled_price": None,
+                "failure_reason": None,
+                "decision_reasoning": "Legacy entry",
+            }
+        )
+
+        response = Mock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = {"ok": True, "result": {"message_id": 1}}
+        confirmer.session.post.return_value = response
+
+        handled = confirmer._handle_command(
+            {
+                "message": {
+                    "chat": {"id": "123"},
+                    "text": "/orders",
+                }
+            }
+        )
+
+        assert handled is True
+        payload = confirmer.session.post.call_args.kwargs["json"]
+        assert "AAPL" in payload["text"]
+        assert "Action: Stock Buy AAPL x1,000" in payload["text"]
+        assert "Est. Cost: $100,000.00" in payload["text"]
     finally:
         history_path.unlink(missing_ok=True)

@@ -249,7 +249,10 @@ class TelegramTradeConfirmer:
         """Continuously poll Telegram for commands and confirmation responses."""
         while not self._listener_stop.is_set():
             try:
-                updates = self._get_updates(self._next_update_offset, timeout=30)
+                updates = self._get_updates(
+                    self._next_update_offset,
+                    timeout=self.config.telegram_poll_timeout_seconds,
+                )
                 for update in updates:
                     self._next_update_offset = max(
                         self._next_update_offset or 0,
@@ -292,7 +295,19 @@ class TelegramTradeConfirmer:
             except ValueError:
                 limit = 10
 
-        self._send_message(self._build_order_history_message(limit=limit), None)
+        try:
+            message_text = self._build_order_history_message(limit=limit)
+        except Exception as exc:  # pragma: no cover - defensive Telegram command path
+            self.logger.warning("Failed to build Telegram order history: %s", exc)
+            message_text = (
+                "I couldn't render the order history cleanly right now. "
+                "Please try again in a moment."
+            )
+
+        try:
+            self._send_message(message_text, None)
+        except (requests.RequestException, TradeConfirmationError, ValueError) as exc:
+            self.logger.warning("Failed to send Telegram /orders response: %s", exc)
         return True
 
     def _handle_confirmation_response(self, update: dict[str, Any]) -> None:
@@ -363,9 +378,7 @@ class TelegramTradeConfirmer:
             lines.append(f"   Time: {self._format_history_timestamp(entry.get('timestamp'))}")
             lines.append(f"   Status: {self._format_history_status(entry)}")
             lines.append(f"   Action: {self._format_history_action(entry)}")
-            lines.append(
-                f"   Est. Cost: ${float(entry.get('estimated_cost', 0.0)):,.2f}"
-            )
+            lines.append(f"   Est. Cost: {self._format_history_money(entry.get('estimated_cost'))}")
             order_id = str(entry.get("order_id") or "").strip()
             if order_id:
                 lines.append(f"   Order ID: {order_id}")
@@ -419,8 +432,34 @@ class TelegramTradeConfirmer:
         trade_type = str(entry.get("trade_type") or "").strip().title() or "Trade"
         side = str(entry.get("side") or "").strip().title() or "Unknown"
         order_symbol = str(entry.get("order_symbol") or "").strip() or "Unknown symbol"
-        quantity = int(entry.get("quantity") or 0)
+        quantity = TelegramTradeConfirmer._safe_int(entry.get("quantity"))
         return f"{trade_type} {side} {order_symbol} x{quantity:,}"
+
+    @staticmethod
+    def _format_history_money(value: Any) -> str:
+        """Return a safe human-readable currency string."""
+        amount = TelegramTradeConfirmer._safe_float(value)
+        return f"${amount:,.2f}"
+
+    @staticmethod
+    def _safe_float(value: Any) -> float:
+        """Best-effort float conversion for legacy history rows."""
+        if value in {None, ""}:
+            return 0.0
+        try:
+            return float(str(value).replace(",", "").strip())
+        except (TypeError, ValueError):
+            return 0.0
+
+    @staticmethod
+    def _safe_int(value: Any) -> int:
+        """Best-effort integer conversion for legacy history rows."""
+        if value in {None, ""}:
+            return 0
+        try:
+            return int(float(str(value).replace(",", "").strip()))
+        except (TypeError, ValueError):
+            return 0
 
     def _record_history(
         self,
