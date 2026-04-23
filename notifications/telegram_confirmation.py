@@ -261,11 +261,13 @@ class TelegramTradeConfirmer:
                     self._handle_update(update)
             except (requests.RequestException, TradeConfirmationError, ValueError) as exc:
                 self.logger.warning("Telegram listener polling failed: %s", exc)
-                time.sleep(2)
+                time.sleep(0.5)
 
     def _handle_update(self, update: dict[str, Any]) -> None:
         """Handle slash commands and pending confirmation responses."""
         if self._handle_command(update):
+            return
+        if self._handle_order_history_callback(update):
             return
         self._handle_confirmation_response(update)
 
@@ -288,26 +290,84 @@ class TelegramTradeConfirmer:
             return False
 
         parts = text.split()
-        limit = 10
+        page_size = 5
         if len(parts) > 1:
             try:
-                limit = max(1, min(int(parts[1]), 20))
+                page_size = max(1, min(int(parts[1]), 20))
             except ValueError:
-                limit = 10
+                page_size = 5
 
         try:
-            message_text = self._build_order_history_message(limit=limit)
+            message_text, reply_markup = self._build_order_history_message(
+                page=0,
+                page_size=page_size,
+            )
         except Exception as exc:  # pragma: no cover - defensive Telegram command path
             self.logger.warning("Failed to build Telegram order history: %s", exc)
             message_text = (
                 "I couldn't render the order history cleanly right now. "
                 "Please try again in a moment."
             )
+            reply_markup = None
 
         try:
-            self._send_message(message_text, None)
+            self._send_message(message_text, None, reply_markup=reply_markup)
         except (requests.RequestException, TradeConfirmationError, ValueError) as exc:
             self.logger.warning("Failed to send Telegram /orders response: %s", exc)
+        return True
+
+    def _handle_order_history_callback(self, update: dict[str, Any]) -> bool:
+        """Handle Previous/Next pagination callbacks for Telegram order history."""
+        callback_query = update.get("callback_query")
+        if not isinstance(callback_query, dict):
+            return False
+
+        message = callback_query.get("message")
+        if not isinstance(message, dict):
+            return False
+
+        chat = message.get("chat")
+        if not isinstance(chat, dict):
+            return False
+
+        chat_id = str(chat.get("id", "")).strip()
+        if chat_id != str(self.config.telegram_chat_id):
+            return False
+
+        callback_data = str(callback_query.get("data", "")).strip()
+        if not callback_data.startswith("ORDER_HISTORY:"):
+            return False
+
+        parts = callback_data.split(":")
+        if len(parts) != 4:
+            return False
+
+        try:
+            page = max(0, int(parts[2]))
+            page_size = max(1, min(int(parts[3]), 20))
+        except ValueError:
+            return False
+
+        try:
+            message_text, reply_markup = self._build_order_history_message(
+                page=page,
+                page_size=page_size,
+            )
+            self._edit_message(
+                message_id=int(message.get("message_id")),
+                text=message_text,
+                reply_markup=reply_markup,
+            )
+            self._safe_answer_callback_query(
+                callback_query.get("id"),
+                f"Showing page {page + 1}",
+            )
+        except (requests.RequestException, TradeConfirmationError, ValueError) as exc:
+            self.logger.warning("Failed to paginate Telegram order history: %s", exc)
+            self._safe_answer_callback_query(
+                callback_query.get("id"),
+                "Could not load that order-history page.",
+            )
         return True
 
     def _handle_confirmation_response(self, update: dict[str, Any]) -> None:
@@ -366,15 +426,28 @@ class TelegramTradeConfirmer:
         lines.extend(summary_lines)
         return "\n".join(lines)
 
-    def _build_order_history_message(self, *, limit: int) -> str:
-        """Render recent order history for the /orders Telegram command."""
-        entries = list(reversed(self.order_history_store.recent(limit=limit)))
+    def _build_order_history_message(
+        self,
+        *,
+        page: int,
+        page_size: int,
+    ) -> tuple[str, dict[str, Any] | None]:
+        """Render paginated recent order history for the /orders Telegram command."""
+        all_entries = list(reversed(self.order_history_store.recent(
+            limit=self.order_history_store.max_entries
+        )))
+        total_entries = len(all_entries)
+        total_pages = max((total_entries + page_size - 1) // page_size, 1)
+        current_page = min(max(page, 0), total_pages - 1)
+        start = current_page * page_size
+        end = start + page_size
+        entries = all_entries[start:end]
         if not entries:
-            return "No order history has been recorded yet."
+            return "No order history has been recorded yet.", None
 
-        lines = [f"Order History ({len(entries)} recent)", ""]
+        lines = [f"Order History (Page {current_page + 1} of {total_pages})", ""]
         for index, entry in enumerate(entries, start=1):
-            lines.append(f"{index}. {self._format_history_symbol(entry)}")
+            lines.append(f"{start + index}. {self._format_history_symbol(entry)}")
             lines.append(f"   Time: {self._format_history_timestamp(entry.get('timestamp'))}")
             lines.append(f"   Status: {self._format_history_status(entry)}")
             lines.append(f"   Action: {self._format_history_action(entry)}")
@@ -386,7 +459,29 @@ class TelegramTradeConfirmer:
             if failure_reason:
                 lines.append(f"   Note: {failure_reason}")
             lines.append("")
-        return "\n".join(lines).rstrip()
+
+        buttons: list[dict[str, str]] = []
+        if current_page > 0:
+            buttons.append(
+                {
+                    "text": "Previous",
+                    "callback_data": (
+                        f"ORDER_HISTORY:PAGE:{current_page - 1}:{page_size}"
+                    ),
+                }
+            )
+        if current_page < total_pages - 1:
+            buttons.append(
+                {
+                    "text": "Next",
+                    "callback_data": (
+                        f"ORDER_HISTORY:PAGE:{current_page + 1}:{page_size}"
+                    ),
+                }
+            )
+
+        reply_markup = {"inline_keyboard": [buttons]} if buttons else None
+        return "\n".join(lines).rstrip(), reply_markup
 
     @staticmethod
     def _format_history_symbol(entry: dict[str, Any]) -> str:
@@ -492,13 +587,21 @@ class TelegramTradeConfirmer:
         }
         self.order_history_store.append(entry)
 
-    def _send_message(self, text: str, confirmation_code: str | None) -> int:
+    def _send_message(
+        self,
+        text: str,
+        confirmation_code: str | None,
+        *,
+        reply_markup: dict[str, Any] | None = None,
+    ) -> int:
         """Send a Telegram message and return its message ID."""
         payload: dict[str, Any] = {
             "chat_id": self.config.telegram_chat_id,
             "text": text,
         }
-        if confirmation_code is not None:
+        if reply_markup is not None:
+            payload["reply_markup"] = reply_markup
+        elif confirmation_code is not None:
             payload["reply_markup"] = {
                 "inline_keyboard": [
                     [
@@ -530,15 +633,25 @@ class TelegramTradeConfirmer:
             raise TradeConfirmationError("Telegram sendMessage returned no message_id")
         return int(result["message_id"])
 
-    def _edit_message(self, *, message_id: int, text: str) -> None:
+    def _edit_message(
+        self,
+        *,
+        message_id: int,
+        text: str,
+        reply_markup: dict[str, Any] | None = None,
+    ) -> None:
         """Edit a previously sent Telegram message and clear inline buttons."""
+        payload: dict[str, Any] = {
+            "chat_id": self.config.telegram_chat_id,
+            "message_id": message_id,
+            "text": text,
+        }
+        if reply_markup is not None:
+            payload["reply_markup"] = reply_markup
+
         response = self.session.post(
             f"{self.base_url}/editMessageText",
-            json={
-                "chat_id": self.config.telegram_chat_id,
-                "message_id": message_id,
-                "text": text,
-            },
+            json=payload,
             timeout=self.config.telegram_request_timeout_seconds,
         )
         response.raise_for_status()

@@ -170,7 +170,7 @@ ${COLOR_CYAN}What To Do Next${COLOR_RESET}
      TELEGRAM_BOT_TOKEN=...
      TELEGRAM_CHAT_ID=...
      TELEGRAM_REQUEST_TIMEOUT_SECONDS=60
-     TELEGRAM_POLL_TIMEOUT_SECONDS=5
+     TELEGRAM_POLL_TIMEOUT_SECONDS=1
 
   4. Restart the service after saving:
      systemctl restart ${SERVICE_NAME}

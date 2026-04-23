@@ -186,3 +186,102 @@ def test_orders_command_tolerates_legacy_string_values():
         assert "Est. Cost: $100,000.00" in payload["text"]
     finally:
         history_path.unlink(missing_ok=True)
+
+
+def test_orders_command_adds_next_button_when_multiple_pages_exist():
+    """The initial /orders response should include a Next button when needed."""
+    history_path = make_history_path()
+    try:
+        confirmer = build_confirmer(history_path)
+        for index in range(6):
+            confirmer.order_history_store.append(
+                {
+                    "timestamp": f"2026-04-22T16:00:0{index}Z",
+                    "trade_type": "STOCK",
+                    "underlying_symbol": f"SYM{index}",
+                    "order_symbol": f"SYM{index}",
+                    "side": "BUY",
+                    "quantity": 10,
+                    "estimated_cost": 1000.0,
+                    "unit_price": 100.0,
+                    "result": "SUCCESS",
+                    "broker_status": "Routed",
+                    "order_id": str(index),
+                    "filled_price": None,
+                    "failure_reason": None,
+                    "decision_reasoning": "Paged entry",
+                }
+            )
+
+        response = Mock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = {"ok": True, "result": {"message_id": 1}}
+        confirmer.session.post.return_value = response
+
+        handled = confirmer._handle_command(
+            {
+                "message": {
+                    "chat": {"id": "123"},
+                    "text": "/orders",
+                }
+            }
+        )
+
+        assert handled is True
+        payload = confirmer.session.post.call_args.kwargs["json"]
+        assert payload["reply_markup"]["inline_keyboard"][0][0]["text"] == "Next"
+    finally:
+        history_path.unlink(missing_ok=True)
+
+
+def test_order_history_callback_edits_message_to_next_page():
+    """Pressing the Next button should edit the same Telegram message to the next page."""
+    history_path = make_history_path()
+    try:
+        confirmer = build_confirmer(history_path)
+        for index in range(6):
+            confirmer.order_history_store.append(
+                {
+                    "timestamp": f"2026-04-22T16:00:0{index}Z",
+                    "trade_type": "STOCK",
+                    "underlying_symbol": f"SYM{index}",
+                    "order_symbol": f"SYM{index}",
+                    "side": "BUY",
+                    "quantity": 10,
+                    "estimated_cost": 1000.0,
+                    "unit_price": 100.0,
+                    "result": "SUCCESS",
+                    "broker_status": "Routed",
+                    "order_id": str(index),
+                    "filled_price": None,
+                    "failure_reason": None,
+                    "decision_reasoning": "Paged entry",
+                }
+            )
+
+        response = Mock()
+        response.raise_for_status.return_value = None
+        response.json.return_value = {"ok": True, "result": True}
+        confirmer.session.post.return_value = response
+        confirmer._answer_callback_query = Mock()
+
+        handled = confirmer._handle_order_history_callback(
+            {
+                "callback_query": {
+                    "id": "cb1",
+                    "data": "ORDER_HISTORY:PAGE:1:5",
+                    "message": {
+                        "chat": {"id": "123"},
+                        "message_id": 42,
+                    },
+                }
+            }
+        )
+
+        assert handled is True
+        payload = confirmer.session.post.call_args.kwargs["json"]
+        assert payload["message_id"] == 42
+        assert "Order History (Page 2 of 2)" in payload["text"]
+        assert "6. SYM0" in payload["text"]
+    finally:
+        history_path.unlink(missing_ok=True)

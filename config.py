@@ -116,7 +116,7 @@ class AppConfig:
                 "TELEGRAM_REQUEST_TIMEOUT_SECONDS must be greater than zero"
             )
         telegram_poll_timeout_seconds = int(
-            os.getenv("TELEGRAM_POLL_TIMEOUT_SECONDS", "5")
+            os.getenv("TELEGRAM_POLL_TIMEOUT_SECONDS", "1")
         )
         if telegram_poll_timeout_seconds <= 0:
             raise ValueError(

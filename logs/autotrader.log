@@ -1,0 +1,15 @@
+[2026-04-22 20:36:39] [WARNING] [TelegramTradeConfirmer] Telegram callback acknowledgement failed: slow
+[2026-04-22 20:36:39] [WARNING] [TelegramTradeConfirmer] Telegram callback acknowledgement failed: slow
+[2026-04-22 20:36:39] [INFO] [OrdersAPI] DRY_RUN enabled; simulated order payload: {'time-in-force': 'Day', 'order-type': 'Market', 'legs': [{'instrument-type': 'Equity', 'symbol': 'AAPL', 'quantity': 2, 'action': 'Buy to Open'}]}
+[2026-04-22 20:36:39] [WARNING] [MarketDataAPI] Using fallback stock quote for AAPL due to quote error: Unable to retrieve quote for AAPL: bad gateway
+[2026-04-22 20:36:39] [WARNING] [MarketDataAPI] Using fallback stock quote for AAPL due to quote error: Unable to retrieve quote for AAPL: bad gateway
+[2026-04-22 20:45:04] [WARNING] [TelegramTradeConfirmer] Telegram callback acknowledgement failed: slow
+[2026-04-22 20:45:04] [WARNING] [TelegramTradeConfirmer] Telegram callback acknowledgement failed: slow
+[2026-04-22 20:45:04] [INFO] [OrdersAPI] DRY_RUN enabled; simulated order payload: {'time-in-force': 'Day', 'order-type': 'Market', 'legs': [{'instrument-type': 'Equity', 'symbol': 'AAPL', 'quantity': 2, 'action': 'Buy to Open'}]}
+[2026-04-22 20:45:04] [WARNING] [MarketDataAPI] Using fallback stock quote for AAPL due to quote error: Unable to retrieve quote for AAPL: bad gateway
+[2026-04-22 20:45:04] [WARNING] [MarketDataAPI] Using fallback stock quote for AAPL due to quote error: Unable to retrieve quote for AAPL: bad gateway
+[2026-04-23 19:23:14] [WARNING] [TelegramTradeConfirmer] Telegram callback acknowledgement failed: slow
+[2026-04-23 19:23:14] [WARNING] [TelegramTradeConfirmer] Telegram callback acknowledgement failed: slow
+[2026-04-23 19:23:14] [INFO] [OrdersAPI] DRY_RUN enabled; simulated order payload: {'time-in-force': 'Day', 'order-type': 'Market', 'legs': [{'instrument-type': 'Equity', 'symbol': 'AAPL', 'quantity': 2, 'action': 'Buy to Open'}]}
+[2026-04-23 19:23:14] [WARNING] [MarketDataAPI] Using fallback stock quote for AAPL due to quote error: Unable to retrieve quote for AAPL: bad gateway
+[2026-04-23 19:23:14] [WARNING] [MarketDataAPI] Using fallback stock quote for AAPL due to quote error: Unable to retrieve quote for AAPL: bad gateway
